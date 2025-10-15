@@ -96,12 +96,14 @@ jobs:
           done
           exit 1
 
+      # ---- Build & start ON EC2 (everything runs remotely) ----
       - name: Build & start on EC2
         env:
-          SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=300 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
+          SSH_OPTS: -tt -o ServerAliveInterval=20 -o ServerAliveCountMax=300 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes
         run: |
-          ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} <<EOF
-          set -euo pipefail
+          ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
+          set -Eeuo pipefail
+          trap 'echo "[ERROR] line $LINENO exited with code $?"' ERR
 
           # Ensure git exists
           if ! command -v git >/dev/null 2>&1; then
@@ -110,16 +112,20 @@ jobs:
 
           cd /home/ubuntu
           sudo chown -R ubuntu:ubuntu /home/ubuntu || true
-          git config --global --add safe.directory /home/ubuntu/AWS-CloudShelf-Microservices-CPSC-465
 
-          # Clone/update repo
-          if [ ! -d "AWS-CloudShelf-Microservices-CPSC-465/.git" ]; then
-            rm -rf AWS-CloudShelf-Microservices-CPSC-465 || true
-            git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git
+          REPO_DIR="/home/ubuntu/AWS-CloudShelf-Microservices-CPSC-465"
+          git config --global --add safe.directory "$REPO_DIR"
+
+          # Clone or update
+          if [ ! -d "$REPO_DIR/.git" ]; then
+            rm -rf "$REPO_DIR" || true
+            git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git "$REPO_DIR"
           fi
 
-          cd AWS-CloudShelf-Microservices-CPSC-465
+          cd "$REPO_DIR"
           git fetch origin --prune
+
+          # Prefer github-actions branch; fallback to main
           if git ls-remote --exit-code --heads origin github-actions >/dev/null 2>&1; then
             git checkout -B github-actions origin/github-actions
           else
@@ -129,25 +135,18 @@ jobs:
           cd spring-microservices-bookstore-demo
           chmod +x create-env.sh ci-script.sh cd-script.sh || true
 
-          echo "[create-env]"
-          stdbuf -oL -eL ./create-env.sh 2>&1 | tee -a "$HOME/deploy.log"
+          LOG="$HOME/deploy.log"; : > "$LOG"
 
-          echo "[ci-script]"
-          stdbuf -oL -eL ./ci-script.sh 2>&1 | tee -a "$HOME/deploy.log"
+          echo "[create-env]" | tee -a "$LOG"
+          ./create-env.sh |& tee -a "$LOG"
 
-          # Live stream deploy + simple heartbeat (no pre-truncation)
-          ( while true; do
-              echo "[keepalive] $(date -u +%T)"
-              sleep 15
-            done ) & KA_PID=$!
+          echo "[ci-script]" | tee -a "$LOG"
+          ./ci-script.sh  |& tee -a "$LOG"
 
-          stdbuf -oL -eL ./cd-script.sh 2>&1 | tee -a "$HOME/deploy.log"
-          STATUS=$?
+          echo "[cd-script]" | tee -a "$LOG"
+          ./cd-script.sh  |& tee -a "$LOG"
 
-          kill "$KA_PID" >/dev/null 2>&1 || true
-
-          echo "[containers]"
-          docker ps --format '{{.Names}} -> {{.Status}}'
-
-          exit $STATUS
+          echo "[containers]" | tee -a "$LOG"
+          docker ps --format '{{.Names}} -> {{.Status}}' | tee -a "$LOG"
           EOF
+
