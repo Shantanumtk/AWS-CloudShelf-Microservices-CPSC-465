@@ -100,7 +100,7 @@ jobs:
         env:
           SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=300 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
         run: |
-          ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
+          ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} <<EOF
           set -euo pipefail
 
           # Ensure git exists
