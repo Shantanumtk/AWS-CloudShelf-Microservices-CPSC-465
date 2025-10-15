@@ -144,14 +144,14 @@ jobs:
           chmod +x create-env.sh ci-script.sh cd-script.sh || true
 
           echo "[create-env]"
-          ./create-env.sh
+          bash create-env.sh
 
           echo "[ci-script]"
-          ./ci-script.sh
+          bash ci-script.sh
 
           # Stream cd-script output to keep SSH alive
           : > "$HOME/deploy.log"
-          ( ./cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
+          ( bash cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
           TAIL_PID=""
           tail -n +1 -f "$HOME/deploy.log" & TAIL_PID=$!
           wait "$(cat "$HOME/deploy.pid")" || true
