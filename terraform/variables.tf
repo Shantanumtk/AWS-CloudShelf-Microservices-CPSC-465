@@ -64,7 +64,7 @@ variable "ssh_private_key_path" {
 variable "local_script_path" {
   description = "Path to the local script you want to run on the instance"
   type        = string
-  default     = "AWS-CloudShelf-Microservices-CPSC-465/install-deps-only.sh"
+  default     = "AWS-CloudShelf-Microservices-CPSC-465/scripts/install-deps-only.sh"
 }
 
 
