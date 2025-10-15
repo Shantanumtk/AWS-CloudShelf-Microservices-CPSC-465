@@ -115,13 +115,20 @@ jobs:
             sudo apt-get install -y git
           fi
           cd /home/ubuntu
+
+          # If a previous run left the repo owned by root, fix ownership
+          sudo chown -R ubuntu:ubuntu /home/ubuntu || true
+
+          # Mark repo path as safe for this user to avoid "dubious ownership"
+          git config --global --add safe.directory /home/ubuntu/AWS-CloudShelf-Microservices-CPSC-465
+
           # Clone/update repo
           if [ ! -d "AWS-CloudShelf-Microservices-CPSC-465" ]; then
             git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git
           fi
           cd AWS-CloudShelf-Microservices-CPSC-465
           git fetch origin
-          git reset --hard origin/main
+          git reset --hard origin/github-actions
           DEMO_DIR="spring-microservices-bookstore-demo"
           cd "$DEMO_DIR"
           # Make sure scripts are executable
