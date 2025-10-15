@@ -1,9 +1,5 @@
 #!/bin/bash
-
-echo "Build Frontend Image..."
-docker build -t microservices-bookstore/nextjs-frontend:latest ./frontend
-
-echo " Starting Microservices Bookstore Application..."
+# A script to start all services in the correct order with necessary delays
 
 # Stop all services first
 echo "Stopping existing services..."
@@ -14,15 +10,15 @@ echo "Starting infrastructure services..."
 docker compose up -d zookeeper broker mongo postgres-order postgres-author postgres-stock-check
 sleep 30
 
-# Step 2: Config Server
-echo "Starting config-server..."
-docker compose up -d config-server
-sleep 30        
-
-# Step 3: Discovery Server
+# Step 2: Discovery Server
 echo "Starting discovery-server..."
 docker compose up -d discovery-server
 sleep 50
+
+# Step 3: Config Server
+echo "Starting config-server..."
+docker compose up -d config-server
+sleep 30        
 
 # Step 4: Microservices
 echo "Starting business microservices..."

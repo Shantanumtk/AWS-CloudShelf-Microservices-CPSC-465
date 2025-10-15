@@ -68,5 +68,4 @@ echo "[*] Git Clone the Repo ..."
 git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git
 cd AWS-CloudShelf-Microservices-CPSC-465/spring-microservices-bookstore-demo
 
-
 echo "✅ Dependencies installed."

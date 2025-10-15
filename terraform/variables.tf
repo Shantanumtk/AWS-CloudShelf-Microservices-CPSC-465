@@ -37,7 +37,6 @@ variable "instance_type" {
 variable "key_name" {
   description = "Name of an existing EC2 Key Pair in the target region"
   type        = string
-  default     = "my-key-pair-2"
 }
 
 variable "allowed_ssh_cidr" {
@@ -60,13 +59,12 @@ variable "root_volume_size_gb" {
 variable "ssh_private_key_path" {
   description = "Path to the local PEM private key that matches the EC2 key pair"
   type        = string
-  default     = " /Users/shantanu/Downloads/my-key-pair-2.pem"
 }
 
 variable "local_script_path" {
   description = "Path to the local script you want to run on the instance"
   type        = string
-  default     = "/Users/shantanu/AWS-CloudShelf-Microservices-CPSC-465/install_resources.sh"
+  default     = "AWS-CloudShelf-Microservices-CPSC-465/install-deps-only.sh"
 }
 
 
