@@ -1,38 +1,48 @@
 #!/bin/bash
-# A script to start all services in the correct order with necessary delays
+# cd-script.sh — simple, sequential bring-up with short, chatty waits
+set -euo pipefail
 
-# Stop all services first
+dot_sleep() {  # sleep N seconds but print a dot each second
+  local secs="${1:-5}"
+  for ((i=1;i<=secs;i++)); do printf "."; sleep 1; done
+  echo
+}
+
 echo "Stopping existing services..."
-docker compose down
+docker compose down || true
 
-# Step 1: Infrastructure
+# 1) Infrastructure
 echo "Starting infrastructure services..."
 docker compose up -d zookeeper broker mongo postgres-order postgres-author postgres-stock-check
-sleep 30
+dot_sleep 20
 
-# Step 2: Discovery Server
+# 2) Discovery Server
 echo "Starting discovery-server..."
 docker compose up -d discovery-server
-sleep 50
+dot_sleep 20
 
-# Step 3: Config Server
+# 3) Config Server
 echo "Starting config-server..."
 docker compose up -d config-server
-sleep 30        
+dot_sleep 15
 
-# Step 4: Microservices
+# 4) Microservices
 echo "Starting business microservices..."
 docker compose up -d book-service author-service order-service stock-check-service message-service
-sleep 40
+dot_sleep 25
 
-# Step 5: API Gateway
+# 5) API Gateway
 echo "Starting API Gateway..."
 docker compose up -d api-gateway
-sleep 60
+dot_sleep 30
 
-# Step 6: Frontend & Monitoring
+# 6) Frontend & Monitoring
 echo "Starting frontend and monitoring..."
 docker compose up -d nextjs-frontend zipkin prometheus grafana
 
-echo ""
+echo
+echo "Current containers:"
+docker compose ps
+
+echo
 echo "✅ All services started!"
