@@ -46,6 +46,7 @@ jobs:
           echo "KEY_PATH=$HOME/.ssh/${KEY_NAME}" >> $GITHUB_ENV
           echo "PUB_KEY_PATH=$HOME/.ssh/${KEY_NAME}.pub" >> $GITHUB_ENV
           echo "Generated key: $KEY_NAME"
+
       - name: Import key pair into AWS
         run: |
           aws ec2 import-key-pair \
@@ -53,6 +54,7 @@ jobs:
             --public-key-material fileb://$PUB_KEY_PATH \
             >/dev/null 2>&1 || true
           echo "Imported AWS KeyPair: $KEY_NAME"
+
       # ---- tfvars for this run ----
       - name: Write terraform.auto.tfvars
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -72,6 +74,7 @@ jobs:
           local_script_path    = "../scripts/install-deps-only.sh"
           EOF
           echo "Wrote terraform.auto.tfvars with key $KEY_NAME"
+
       # ---- Terraform apply (new EC2 because key changed) ----
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -89,6 +92,7 @@ jobs:
           IP=$(terraform output -raw ec2_public_ip)
           echo "ec2_ip=$IP" >> $GITHUB_OUTPUT
           echo "EC2 IP: $IP"
+
       # ---- SSH prep & readiness ----
       - name: Add host to known_hosts
         run: ssh-keyscan -H ${{ steps.tfout.outputs.ec2_ip }} >> ~/.ssh/known_hosts
@@ -104,43 +108,55 @@ jobs:
             sleep 10
           done
           echo "SSH not ready in time" && exit 1
+
       # ---- Build & start ON EC2 (everything runs remotely) ----
       - name: Build & start on EC2
         env:
-          SSH_OPTS: -tt -o ServerAliveInterval=20 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes
+          SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=180 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
         run: |
-          ssh -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
+          ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
           set -euo pipefail
+
           # Ensure git exists (first boot)
           if ! command -v git >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y git
+            sudo apt-get update -y && sudo apt-get install -y git
           fi
+
           cd /home/ubuntu
-
-          # If a previous run left the repo owned by root, fix ownership
           sudo chown -R ubuntu:ubuntu /home/ubuntu || true
-
-          # Mark repo path as safe for this user to avoid "dubious ownership"
           git config --global --add safe.directory /home/ubuntu/AWS-CloudShelf-Microservices-CPSC-465
 
           # Clone/update repo
-          if [ ! -d "AWS-CloudShelf-Microservices-CPSC-465" ]; then
+          if [ ! -d "AWS-CloudShelf-Microservices-CPSC-465/.git" ]; then
+            rm -rf AWS-CloudShelf-Microservices-CPSC-465 || true
             git clone https://github.com/Shantanumtk/AWS-CloudShelf-Microservices-CPSC-465.git
           fi
+
           cd AWS-CloudShelf-Microservices-CPSC-465
-          git fetch origin
-          git reset --hard origin/github-actions
-          DEMO_DIR="spring-microservices-bookstore-demo"
-          cd "$DEMO_DIR"
-          # Make sure scripts are executable
+          git fetch origin --prune
+          if git ls-remote --exit-code --heads origin github-actions >/dev/null 2>&1; then
+            git checkout -B github-actions origin/github-actions
+          else
+            git checkout -B main origin/main
+          fi
+
+          cd spring-microservices-bookstore-demo
           chmod +x create-env.sh ci-script.sh cd-script.sh || true
-          echo "Create .env from EC2 public IP"
-          bash create-env.sh
-          echo "CI: build backend/frontend images (your script)"
-          bash ci-script.sh
-          echo "CD: bring up docker compose (your script)"
-          bash cd-script.sh
-          echo "Running containers:"
+
+          echo "[create-env]"
+          ./create-env.sh
+
+          echo "[ci-script]"
+          ./ci-script.sh
+
+          # Stream cd-script output to keep SSH alive
+          : > "$HOME/deploy.log"
+          ( ./cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
+          TAIL_PID=""
+          tail -n +1 -f "$HOME/deploy.log" & TAIL_PID=$!
+          wait "$(cat "$HOME/deploy.pid")" || true
+          kill "$TAIL_PID" >/dev/null 2>&1 || true
+
+          echo "[containers]"
           docker ps --format '{{.Names}} -> {{.Status}}'
           EOF

@@ -34,7 +34,7 @@ dot_sleep 25
 # 5) API Gateway
 echo "Starting API Gateway..."
 docker compose up -d api-gateway
-dot_sleep 30
+dot_sleep 25
 
 # 6) Frontend & Monitoring
 echo "Starting frontend and monitoring..."
