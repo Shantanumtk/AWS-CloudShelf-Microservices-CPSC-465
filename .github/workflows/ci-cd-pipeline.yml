@@ -75,7 +75,7 @@ jobs:
           EOF
           echo "Wrote terraform.auto.tfvars with key $KEY_NAME"
 
-      # ---- Terraform apply (new EC2 because key changed) ----
+      # ---- Terraform apply ----
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false
@@ -112,7 +112,7 @@ jobs:
       # ---- Build & start ON EC2 (everything runs remotely) ----
       - name: Build & start on EC2
         env:
-          SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=180 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
+          SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=300 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
         run: |
           ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
           set -euo pipefail
@@ -144,18 +144,25 @@ jobs:
           chmod +x create-env.sh ci-script.sh cd-script.sh || true
 
           echo "[create-env]"
-          bash create-env.sh
+          ./create-env.sh
 
           echo "[ci-script]"
-          bash ci-script.sh
+          ./ci-script.sh
 
-          # Stream cd-script output to keep SSH alive
+          # Stream cd-script output to keep SSH alive (no script changes needed)
           : > "$HOME/deploy.log"
-          ( bash cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
-          TAIL_PID=""
-          tail -n +1 -f "$HOME/deploy.log" & TAIL_PID=$!
+          ( ./cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
+
+          # Heartbeat + robust tail so Actions logs keep moving
+          ( while kill -0 "$(cat "$HOME/deploy.pid")" 2>/dev/null; do
+              echo "[keepalive] $(date -u +%T)"
+              sleep 15
+            done ) & KA_PID=$!
+
+          stdbuf -oL -eL tail -n +1 -F "$HOME/deploy.log" & TAIL_PID=$!
+
           wait "$(cat "$HOME/deploy.pid")" || true
-          kill "$TAIL_PID" >/dev/null 2>&1 || true
+          kill "$TAIL_PID" "$KA_PID" >/dev/null 2>&1 || true
 
           echo "[containers]"
           docker ps --format '{{.Names}} -> {{.Status}}'
