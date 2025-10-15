@@ -22,7 +22,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---- AWS auth (access keys) ----
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -30,13 +29,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # ---- Terraform setup ----
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
-      # ---- Per-run SSH keypair (forces new EC2) ----
       - name: Generate per-run SSH keypair
         run: |
           mkdir -p ~/.ssh
@@ -55,7 +52,6 @@ jobs:
             >/dev/null 2>&1 || true
           echo "Imported AWS KeyPair: $KEY_NAME"
 
-      # ---- tfvars for this run ----
       - name: Write terraform.auto.tfvars
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
@@ -75,7 +71,6 @@ jobs:
           EOF
           echo "Wrote terraform.auto.tfvars with key $KEY_NAME"
 
-      # ---- Terraform apply ----
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false
@@ -84,7 +79,6 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve
 
-      # ---- Capture EC2 public IP from outputs.tf ----
       - name: Get EC2 public IP
         id: tfout
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -93,7 +87,6 @@ jobs:
           echo "ec2_ip=$IP" >> $GITHUB_OUTPUT
           echo "EC2 IP: $IP"
 
-      # ---- SSH prep & readiness ----
       - name: Add host to known_hosts
         run: ssh-keyscan -H ${{ steps.tfout.outputs.ec2_ip }} >> ~/.ssh/known_hosts
 
@@ -109,7 +102,6 @@ jobs:
           done
           echo "SSH not ready in time" && exit 1
 
-      # ---- Build & start ON EC2 (everything runs remotely) ----
       - name: Build & start on EC2
         env:
           SSH_OPTS: "-tt -o ServerAliveInterval=10 -o ServerAliveCountMax=300 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes"
@@ -117,7 +109,7 @@ jobs:
           ssh $SSH_OPTS -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
           set -euo pipefail
 
-          # Ensure git exists (first boot)
+          # Ensure git exists
           if ! command -v git >/dev/null 2>&1; then
             sudo apt-get update -y && sudo apt-get install -y git
           fi
@@ -149,20 +141,15 @@ jobs:
           echo "[ci-script]"
           ./ci-script.sh
 
-          # Stream cd-script output to keep SSH alive (no script changes needed)
-          : > "$HOME/deploy.log"
-          ( ./cd-script.sh >> "$HOME/deploy.log" 2>&1 & echo $! > "$HOME/deploy.pid" )
-
-          # Heartbeat + robust tail so Actions logs keep moving
-          ( while kill -0 "$(cat "$HOME/deploy.pid")" 2>/dev/null; do
+          # Live stream deploy + simple heartbeat (no file pre-truncation)
+          ( while true; do
               echo "[keepalive] $(date -u +%T)"
               sleep 15
             done ) & KA_PID=$!
 
-          stdbuf -oL -eL tail -n +1 -F "$HOME/deploy.log" & TAIL_PID=$!
+          stdbuf -oL -eL ./cd-script.sh 2>&1 | tee -a "$HOME/deploy.log"
 
-          wait "$(cat "$HOME/deploy.pid")" || true
-          kill "$TAIL_PID" "$KA_PID" >/dev/null 2>&1 || true
+          kill "$KA_PID" >/dev/null 2>&1 || true
 
           echo "[containers]"
           docker ps --format '{{.Names}} -> {{.Status}}'
