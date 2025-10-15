@@ -106,6 +106,8 @@ jobs:
           echo "SSH not ready in time" && exit 1
       # ---- Build & start ON EC2 (everything runs remotely) ----
       - name: Build & start on EC2
+        env:
+          SSH_OPTS: -tt -o ServerAliveInterval=20 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes -o StrictHostKeyChecking=yes
         run: |
           ssh -i "$KEY_PATH" ubuntu@${{ steps.tfout.outputs.ec2_ip }} << 'EOF'
           set -euo pipefail
@@ -133,12 +135,12 @@ jobs:
           cd "$DEMO_DIR"
           # Make sure scripts are executable
           chmod +x create-env.sh ci-script.sh cd-script.sh || true
-          echo "📝 Create .env from EC2 public IP"
+          echo "Create .env from EC2 public IP"
           bash create-env.sh
-          echo "🏗️  CI: build backend/frontend images (your script)"
+          echo "CI: build backend/frontend images (your script)"
           bash ci-script.sh
-          echo "🚀 CD: bring up docker compose (your script)"
+          echo "CD: bring up docker compose (your script)"
           bash cd-script.sh
-          echo "📦 Running containers:"
+          echo "Running containers:"
           docker ps --format '{{.Names}} -> {{.Status}}'
           EOF
